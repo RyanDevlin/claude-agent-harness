@@ -1,0 +1,31 @@
+# Project Specification: URL Shortener API
+
+## Overview
+Build a simple URL shortener REST API in Go.
+
+## Requirements
+
+### Core Features
+- `POST /shorten` — Accepts a JSON body `{"url": "https://example.com"}` and returns a short code
+- `GET /:code` — Redirects to the original URL
+- `GET /stats/:code` — Returns visit count and creation date for a short URL
+
+### Technical Details
+- Language: Go (latest stable)
+- Storage: SQLite (no external database required)
+- Port: 8080 (configurable via `PORT` env var)
+- Short codes: 6-character alphanumeric, randomly generated
+
+### Testing
+- Unit tests for the shortening logic
+- Integration tests for the HTTP handlers
+- Test with `go test ./...`
+
+### Project Structure
+```
+cmd/server/main.go     — Entry point
+internal/
+  handler/             — HTTP handlers
+  store/               — Database layer
+  shortener/           — URL shortening logic
+```
