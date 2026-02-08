@@ -5,11 +5,9 @@ services:
       - config.env
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - SSH_AUTH_SOCK=/ssh-agent
     volumes:
-      # Mount SSH agent for git push access (if using SSH URLs)
-      - ${SSH_AUTH_SOCK:-/dev/null}:/ssh-agent
-      - ${HOME:-.}/.ssh:/root/.ssh:ro
+      # Mount only the specific SSH deploy key for git push access
+      - ${SSH_KEY_PATH}:/run/ssh_key:ro
 
 # Usage:
 #   docker compose build
