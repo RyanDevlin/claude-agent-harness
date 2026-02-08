@@ -36,7 +36,7 @@ fi
 
 # Commit the release
 git add tasks.json
-git commit -m "agent($AGENT_ID): release task $TASK_ID ($FINAL_STATUS)" || {
+git commit -m "[HARNESS] agent($AGENT_ID): release task $TASK_ID ($FINAL_STATUS)" || {
     log "Warning: nothing to commit during release"
 }
 

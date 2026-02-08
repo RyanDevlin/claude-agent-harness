@@ -199,7 +199,7 @@ while true; do
     cd "$WORKSPACE"
     if ! git diff --quiet || ! git diff --cached --quiet; then
         git add -A
-        git commit -m "agent($AGENT_ID): work on task $TASK_ID" || true
+        git commit -m "[FEATURE] agent($AGENT_ID): work on task $TASK_ID" || true
     fi
 
     # Step 6: Release the task

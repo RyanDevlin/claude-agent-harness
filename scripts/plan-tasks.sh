@@ -75,7 +75,7 @@ cat > "$PLAN_LOCK" <<EOF
 EOF
 
 git add "$PLAN_LOCK"
-git commit -m "agent($AGENT_ID): claim planning lock"
+git commit -m "[HARNESS] agent($AGENT_ID): claim planning lock"
 
 if ! git push origin "$REPO_BRANCH"; then
     log "Failed to claim planning lock (conflict), waiting for other planner"
@@ -109,11 +109,11 @@ fi
 # Commit whatever the planner produced
 if [ -f tasks.json ]; then
     git add -A
-    git commit -m "plan: generate tasks and init script from project spec" || true
+    git commit -m "[PLAN] generate tasks and init script from project spec" || true
 
     # Remove the planning lock
     git rm -f "$PLAN_LOCK" 2>/dev/null || true
-    git commit -m "agent($AGENT_ID): release planning lock" || true
+    git commit -m "[HARNESS] agent($AGENT_ID): release planning lock" || true
 
     "$SCRIPT_DIR/sync-repo.sh" push || {
         log "ERROR: failed to push planning results"
@@ -126,7 +126,7 @@ else
     log "ERROR: planner did not produce tasks.json"
     # Clean up the lock so others can retry
     git rm -f "$PLAN_LOCK" 2>/dev/null || true
-    git commit -m "agent($AGENT_ID): release planning lock (failed)" || true
+    git commit -m "[HARNESS] agent($AGENT_ID): release planning lock (failed)" || true
     git push origin "$REPO_BRANCH" 2>/dev/null || true
     exit 1
 fi

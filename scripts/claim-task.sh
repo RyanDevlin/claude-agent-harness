@@ -46,7 +46,7 @@ fi
 
 # Commit and push
 git add "$LOCK_FILE" tasks.json
-git commit -m "agent($AGENT_ID): claim task $TASK_ID"
+git commit -m "[HARNESS] agent($AGENT_ID): claim task $TASK_ID"
 
 if ! git push origin "$REPO_BRANCH"; then
     log "Push failed — another agent may have claimed this task"
