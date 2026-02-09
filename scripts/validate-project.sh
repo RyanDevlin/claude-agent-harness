@@ -142,14 +142,38 @@ if ! git push origin "$REPO_BRANCH" --quiet 2>/dev/null; then
     exit 1
 fi
 
-log_info "Claimed validation lock — running validator with $CLAUDE_MODEL..."
+CURRENT_ROUND=$((VALIDATION_ROUND + 1))
+log_info "Claimed validation lock — running validator round $CURRENT_ROUND/$MAX_VALIDATION_ROUNDS with $CLAUDE_MODEL..."
+
+# Build the validator prompt with round context
+VALIDATOR_BASE_PROMPT="$(cat "$VALIDATOR_PROMPT_FILE")"
+ROUND_CONTEXT=""
+
+if [ "$VALIDATION_ROUND" -gt 0 ]; then
+    ROUND_CONTEXT="
+
+---
+
+**IMPORTANT: This is validation round ${CURRENT_ROUND} of ${MAX_VALIDATION_ROUNDS}.**
+
+Previous validation rounds found gaps and created remediation tasks. Those tasks have now been completed by other agents.
+Your job this round is to:
+1. Verify that the remediation tasks were completed correctly
+2. Check if any NEW issues were introduced by the fixes
+3. Run the full validation again — do not assume previous findings are resolved just because tasks were marked done
+4. Focus especially on areas that were flagged in previous rounds
+
+Check the git log for commits tagged [VALIDATION] to see what was flagged before."
+fi
+
+VALIDATOR_PROMPT="${VALIDATOR_BASE_PROMPT}${ROUND_CONTEXT}"
 
 # Run the validator
 LOGFILE="/tmp/validator_${AGENT_ID}.log"
 
 # Stream output to terminal and log file
 if claude --dangerously-skip-permissions \
-          -p "$(cat "$VALIDATOR_PROMPT_FILE")" \
+          -p "$VALIDATOR_PROMPT" \
           --model "$CLAUDE_MODEL" \
           2>&1 | tee "$LOGFILE"; then
     log_ok "Validator completed successfully"

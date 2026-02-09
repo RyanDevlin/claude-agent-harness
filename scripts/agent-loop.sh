@@ -81,10 +81,28 @@ cleanup_stale_locks() {
         [[ "$(basename "$lock_file")" == "_validation.lock" ]] && continue
 
         lock_agent=$(jq -r '.agent // "unknown"' "$lock_file" 2>/dev/null)
+        task_id=$(jq -r '.task_id // empty' "$lock_file" 2>/dev/null)
+
+        # Check if this is our own abandoned lock. This happens when:
+        # 1. We completed a task and committed the release locally
+        # 2. Push failed (merge conflict)
+        # 3. Next pull did git reset --hard, discarding our release commit
+        # 4. The lock is back from remote, still owned by us
+        # Since we're in cleanup (not actively working), this lock is abandoned.
+        if [ "$lock_agent" = "$AGENT_ID" ]; then
+            log_warn "Found our own abandoned lock for task $task_id — push must have failed, resetting to pending"
+            if [ -n "$task_id" ] && [ -f "$WORKSPACE/tasks.json" ]; then
+                jq --arg id "$task_id" \
+                   'map(if .id == $id then .status = "pending" else . end)' \
+                   "$WORKSPACE/tasks.json" > "$WORKSPACE/tasks.json.tmp" \
+                   && mv "$WORKSPACE/tasks.json.tmp" "$WORKSPACE/tasks.json"
+            fi
+            git rm -f "$lock_file" --quiet 2>/dev/null || rm -f "$lock_file"
+            cleaned=$((cleaned + 1))
+            continue
+        fi
 
         if is_lock_dead "$lock_file"; then
-            task_id=$(jq -r '.task_id // empty' "$lock_file" 2>/dev/null)
-
             # Determine reason for logging
             if ! is_agent_alive "$lock_agent"; then
                 reason="agent $lock_agent is dead"
@@ -176,11 +194,32 @@ setup_ssh
 # ── Task helpers ──────────────────────────────────────────────────────────────
 
 # Find the next pending task from tasks.json. Prints the task ID or empty string.
+# Defers "final-*" tasks until all other tasks (pending + in_progress) are done,
+# so that final validation/integration tasks only run after all regular work completes.
 next_pending_task() {
     if [ ! -f "$WORKSPACE/tasks.json" ]; then
         echo ""
         return
     fi
+
+    # Try non-final pending tasks first
+    local next
+    next=$(jq -r '[.[] | select(.status == "pending" and (.id | startswith("final-") | not))] | .[0].id // empty' "$WORKSPACE/tasks.json")
+    if [ -n "$next" ]; then
+        echo "$next"
+        return
+    fi
+
+    # Only final-* tasks remain pending. Check if any non-final tasks are still in progress.
+    local non_final_active
+    non_final_active=$(jq '[.[] | select((.status == "pending" or .status == "in_progress") and (.id | startswith("final-") | not))] | length' "$WORKSPACE/tasks.json")
+    if [ "$non_final_active" -gt 0 ]; then
+        # Other work is still running — don't start final tasks yet
+        echo ""
+        return
+    fi
+
+    # All non-final work is done — release final tasks
     jq -r '[.[] | select(.status == "pending")] | .[0].id // empty' "$WORKSPACE/tasks.json"
 }
 
@@ -393,8 +432,19 @@ if [ ! -f tasks.json ]; then
 fi
 
 TOTAL_TASKS=$(jq 'length' tasks.json 2>/dev/null || echo "?")
-PENDING=$(pending_task_count)
-log_ok "Phase 1 complete — $TOTAL_TASKS total tasks, $PENDING pending"
+DONE_COUNT=$(jq '[.[] | select(.status == "done")] | length' tasks.json 2>/dev/null || echo 0)
+PENDING_COUNT=$(jq '[.[] | select(.status == "pending")] | length' tasks.json 2>/dev/null || echo 0)
+IN_PROGRESS_COUNT=$(jq '[.[] | select(.status == "in_progress")] | length' tasks.json 2>/dev/null || echo 0)
+FAILED_COUNT=$(jq '[.[] | select(.status == "failed")] | length' tasks.json 2>/dev/null || echo 0)
+RETRIABLE_COUNT=$(jq --argjson max "${MAX_TASK_RETRIES:-2}" '[.[] | select(.status == "failed" and ((.retry_count // 0) < $max))] | length' tasks.json 2>/dev/null || echo 0)
+
+log_ok "Phase 1 complete — $TOTAL_TASKS total tasks:"
+log "  ${_GREEN}done: $DONE_COUNT${_RESET}  |  pending: $PENDING_COUNT  |  ${_YELLOW}in_progress: $IN_PROGRESS_COUNT${_RESET}  |  ${_RED}failed: $FAILED_COUNT${_RESET}"
+
+WILL_RETRY=$((IN_PROGRESS_COUNT + RETRIABLE_COUNT))
+if [ "$WILL_RETRY" -gt 0 ]; then
+    log_warn "Will reschedule $WILL_RETRY incomplete tasks ($IN_PROGRESS_COUNT orphaned + $RETRIABLE_COUNT retriable failures)"
+fi
 
 # ── Phase 2: Environment Setup ────────────────────────────────────────────────
 
@@ -441,7 +491,9 @@ while true; do
 
         # If some tasks are still in_progress (other agents working), wait
         if ! all_tasks_terminal; then
-            log "No pending tasks but some still in progress — waiting 15s..."
+            local active_count
+            active_count=$(jq '[.[] | select(.status == "in_progress")] | length' "$WORKSPACE/tasks.json" 2>/dev/null || echo "?")
+            log "No pending tasks but $active_count still in progress — waiting 15s..."
             sleep 15
             continue
         fi

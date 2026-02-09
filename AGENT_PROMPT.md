@@ -31,6 +31,12 @@ Apply secure coding practices to every line you write:
 
 If you discover a security issue in existing code while working on your task, fix it and commit it separately with a `[SECURITY]` commit message explaining the vulnerability and the fix.
 
+## Task Priority
+
+Tasks with IDs starting with `final-` (e.g., `final-security-audit`, `final-validation`) are **deferred tasks** — the harness only assigns them after all other tasks are complete. If you are working on a `final-` task, you can assume all regular feature/implementation work is done. Your job is to review, test, and validate the completed project.
+
+If a `final-` task discovers issues, it should fix what it can directly and commit the fixes. The harness validation phase will create additional remediation tasks for any remaining gaps.
+
 ## Getting Context
 
 - Read `PROJECT_SPEC.md` to understand the overall project goals and architecture.
